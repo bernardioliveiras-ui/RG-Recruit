@@ -5,8 +5,8 @@
   "compatibility_date": "2026-11-22",
   "vars": {
     "PRIVACY_READY": "false",
-    "TURNSTILE_SITE_KEY": "",
-    "TURNSTILE_HOSTNAME": ""
+    "TURNSTILE_SITE_KEY": "0x4AAAAAAGNqz9LO_77MqRjj",
+    "TURNSTILE_HOSTNAME": "rg-recruit.bernardioliveiras.workers.dev"
   },
   "assets": {
     "directory": "./public",
