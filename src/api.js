@@ -5,6 +5,8 @@ import {
 } from './auth.js';
 import { scoreCandidate } from './matching.js';
 import { validateApplicant, validateJob } from './validation.js';
+import * as commerce from './commerce.js';
+import { commerceMethods, handleCommerceAdmin } from './commerce-api.js';
 
 const maxBodyBytes = 128 * 1024;
 const loopbackHosts = new Set(['localhost', '127.0.0.1', '[::1]']);
@@ -159,7 +161,7 @@ export async function handleApi(request, env, url = new URL(request.url)) {
   const detail = /^\/api\/jobs\/([1-9]\d*)$/u.exec(pathname);
   const allowedMethod = pathname === '/api/applications' ? 'POST' : 'GET';
   if (pathname !== '/api/config' && pathname !== '/api/jobs' &&
-      pathname !== '/api/applications' && !detail) {
+      pathname !== '/api/applications' && pathname !== '/api/partners' && !detail) {
     return json({ error: 'Rota não encontrada.' }, 404);
   }
   if (request.method !== allowedMethod) {
@@ -180,6 +182,9 @@ export async function handleApi(request, env, url = new URL(request.url)) {
         return json({ error: 'Use até 100 caracteres em cada filtro.' }, 400);
       }
       return json({ jobs: await repo.listPublishedJobs(env.DB, { country, area }) });
+    }
+    if (pathname === '/api/partners') {
+      return json({ partners: await commerce.listPartners(env.DB, { publicOnly: true }) });
     }
     if (detail) {
       const id = Number(detail[1]);
@@ -272,6 +277,9 @@ async function jobsRoute(db, method, id, matches, url, data) {
   }
   const result = validateJob(id ? { ...existing, ...data } : data);
   if (!result.ok) return json({ error: 'Revise os dados da vaga.', errors: result.errors }, 400);
+  if (result.value.status === 'published' && (!id || !await repo.canPublishJob(db,id))) {
+    return json({error:'A publicação exige pagamento confirmado e anúncio vigente. Registre o contrato no painel de pagamentos.'},409);
+  }
   const job = id ? await repo.patchJob(db, id, result.value, data) : await repo.createJob(db, result.value);
   return job ? json({ job }, id ? 200 : 201) : jobNotFound();
 }
@@ -305,11 +313,12 @@ const adminMethods = new Map([
   ['jobs', ['GET', 'POST']], ['jobs/:id', ['PATCH']], ['jobs/:id/matches', ['GET']],
   ['candidates', ['GET']], ['candidates/search', ['POST']], ['candidates/:id', ['GET', 'DELETE']],
   ['applications', ['GET']], ['applications/:id', ['PATCH', 'DELETE']],
+  ...commerceMethods,
 ]);
 
 async function handleAdmin(request, env, url) {
   const path = url.pathname.slice('/api/admin/'.length);
-  const route = /^([a-z]+)(?:\/([1-9]\d*))?(\/matches|\/search)?$/u.exec(path);
+  const route = /^([a-z]+)(?:\/([1-9]\d*))?(\/matches|\/search|\/approve|\/cancel)?$/u.exec(path);
   if (!route) return notFound();
   const [, resource, rawId, suffix = ''] = route;
   const id = rawId ? Number(rawId) : null;
@@ -360,5 +369,7 @@ async function handleAdmin(request, env, url) {
     case 'jobs': return jobsRoute(db, method, id, suffix === '/matches', url, data);
     case 'candidates': return candidatesRoute(db, method, id, url, data);
     case 'applications': return applicationsRoute(db, method, id, url, data);
+    case 'companies': case 'orders': case 'categories': case 'partners':
+      return handleCommerceAdmin(db,{resource,id,suffix,method,data,admin,respond:json});
   }
 }

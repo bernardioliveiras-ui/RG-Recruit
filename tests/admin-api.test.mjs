@@ -6,10 +6,20 @@ import { handleApi } from '../src/api.js';
 
 const origin = 'https://recruit.example';
 const schema = [
-  '../migrations/0001_initial.sql', '../migrations/0002_match_requirements.sql',
+  '../migrations/0001_initial.sql', '../migrations/0002_match_requirements.sql', '../migrations/0003_commercial.sql',
 ].map(path => readFileSync(new URL(path, import.meta.url), 'utf8')).join('\n');
 const credentials = { email: 'ADMIN@example.org', password: 'a sufficiently long passphrase' };
 const vacancy = { title: 'Operador', area: 'Desossa', country: 'Portugal', description: 'Uma vaga.' };
+
+async function approveDemoContract(api,jobId){
+  const registered=await api('/companies','POST',{name:'Empresa de teste',country:'Portugal'});
+  assert.equal(registered.status,201);
+  const company=(await registered.json()).company;
+  const ordered=await api('/orders','POST',{job_id:jobId,company_id:company.id,amount_cents:10000,duration_days:30});
+  assert.equal(ordered.status,201);
+  const order=(await ordered.json()).order;
+  assert.equal((await api('/orders/'+order.id+'/approve','POST',{})).status,200);
+}
 
 function setup(t) {
   const sql = new DatabaseSync(':memory:');
@@ -114,6 +124,8 @@ test('job publication, candidate filters, all-pool ranking, application review a
   assert.equal((await api('/jobs', 'POST', {})).status, 400);
   const job = (await (await api('/jobs', 'POST', vacancy)).json()).job;
   assert.equal(job.status, 'draft');
+  assert.equal((await api('/jobs/1','PATCH',{status:'published'})).status,409);
+  await approveDemoContract(api,job.id);
   assert.equal((await (await api('/jobs/1', 'PATCH', { status: 'published' })).json()).job.title, vacancy.title);
   assert.equal((await (await api('/jobs')).json()).jobs[0].status, 'published');
   sql.exec(`
@@ -143,11 +155,12 @@ test('staff can rank mandatory tasks and role-specific years without hiding othe
   const {request,authenticate,sql} = setup(t);
   const auth = await authenticate();
   const post = async (path,method,body) => request(path,method,body,auth);
-  const response = await post('/jobs','POST',{...vacancy,status:'published',
+  const response = await post('/jobs','POST',{...vacancy,
     required_skills:['Culatra'],skills:['Serra do peito'],min_years_experience:4,
     qualifications:['HACCP'],languages:['Português']});
   assert.equal(response.status, 201);
   const created = (await response.json()).job;
+  await approveDemoContract(post,created.id);
   assert.deepEqual(created.required_skills,['Culatra']);
   assert.deepEqual(created.qualifications,['HACCP']);
   sql.prepare(`INSERT INTO candidates (name,phone,country,areas,years_experience,skills,languages,experiences,qualifications)
@@ -277,7 +290,8 @@ test('stale deletion and triage requests cannot affect a later applicant after e
   const { request, authenticate, sql } = setup(t);
   const auth = await authenticate();
   const api = (path, method, body) => request(path, method, body, auth);
-  const job = (await (await api('/jobs', 'POST', { ...vacancy, status: 'published' })).json()).job;
+  const job = (await (await api('/jobs', 'POST', vacancy)).json()).job;
+  await approveDemoContract(api,job.id);
   const add = sql.prepare('INSERT INTO candidates (name, phone, country) VALUES (?, ?, ?) RETURNING id');
   const apply = sql.prepare('INSERT INTO applications (candidate_id, job_id) VALUES (?, ?) RETURNING id');
   const original = add.get('Ana', '+351911111111', 'Portugal');

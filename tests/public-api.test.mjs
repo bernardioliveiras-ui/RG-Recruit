@@ -6,7 +6,7 @@ import { handleApi } from '../src/api.js';
 import worker, { onRequest } from '../src/index.js';
 
 const schema = [
-  '../migrations/0001_initial.sql', '../migrations/0002_match_requirements.sql',
+  '../migrations/0001_initial.sql', '../migrations/0002_match_requirements.sql', '../migrations/0003_commercial.sql',
 ].map(path => readFileSync(new URL(path, import.meta.url), 'utf8')).join('\n');
 const applicant = {
   job_id: 1, name: 'Nome original', phone: '+55 (11) 91234-5678',

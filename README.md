@@ -2,7 +2,9 @@
 
 Portal de vagas em português e painel de recrutamento internacional. O mesmo Cloudflare Worker serve o conteúdo de `public/` e a API em `/api/`. O banco D1 guarda vagas, candidatos, inscrições e contas da equipe. O projeto começa sem registros de demonstração.
 
-**Atualização v1.3:** compatibilidade por tarefas obrigatórias/desejáveis e anos na função, histórico de trabalho de candidatos e ranking com revisão humana. Se já publicou a v1.1/v1.2, leia primeiro [DEPLOY-V1.3.md](docs/DEPLOY-V1.3.md) e execute a migração `0002` no mesmo D1 antes de publicar o novo código. Não substitua seu `wrangler.jsonc` configurado.
+**Atualização comercial B2B:** empresas anunciantes, cobranças e aprovações **manuais**, publicação por prazo, renovação e parceiros/categorias editáveis no painel. Candidatos não pagam. Para atualizar um Worker já publicado, siga **[DEPLOY-B2B.md](docs/DEPLOY-B2B.md)** e aplique a migração `0003` **antes** do deploy. Preserve seu `wrangler.jsonc` configurado. A integração com Nickel e a migração para Hostinger não fazem parte desta versão.
+
+**Atualização v1.3:** compatibilidade por tarefas obrigatórias/desejáveis e anos na função, histórico de trabalho de candidatos e ranking com revisão humana. Instalações anteriores à v1.3 precisam também da migração `0002`; veja [DEPLOY-V1.3.md](docs/DEPLOY-V1.3.md).
 
 **Antes de divulgar o link ou receber dados reais**, complete o aviso de privacidade, valide o canal de atendimento e obtenha revisão jurídica para os países envolvidos. Com a configuração inicial, as vagas podem ser consultadas, mas o formulário e a gravação de candidaturas ficam bloqueados em produção.
 
@@ -61,7 +63,7 @@ Use `npm run deploy` para cada publicação. Quando `PRIVACY_READY` está em `"t
 
 ## Roteiro de aceitação
 
-1. Entre em `/#admin`. Crie e publique “Embalamento de teste” em Portugal, com a habilidade “Embalamento”. Em outra janela, filtre por Portugal e abra o link da vaga. Confirme que rascunhos ficam fora da lista.
+1. Entre em `/#admin`. Crie “Embalamento de teste” em Portugal, com a habilidade “Embalamento”, **como rascunho**. Em **Empresas**, cadastre uma empresa de teste e, em **Pagamentos**, registre uma cobrança. **Somente em ambiente isolado de testes**, confirme o pagamento e verifique que a vaga foi publicada. Em outra janela, filtre por Portugal e abra o link da vaga. Confirme que rascunhos e anúncios vencidos ficam fora da lista.
 2. Use os dados fictícios “Pessoa Exemplo”, `+1 202 555 0147`, `pessoa@example.invalid`, país de residência “Portugal”, dois anos de experiência e habilidade “Embalamento”. Leia o aviso, confirme o consentimento e envie. Em produção, conclua a verificação do widget.
 3. Publique “Embalamento de teste 2” com a mesma habilidade. No seu painel de compatibilidade, verifique a pessoa como compatível sem inscrição e confira os critérios da pontuação. Candidate-se à segunda vaga com o mesmo número. Confirme no painel um perfil e duas inscrições. Uma nova candidatura preserva os dados do primeiro cadastro.
 4. Altere um status de triagem, atualize a página e confira a persistência. Em uma das inscrições fictícias, use **Retirar inscrição**, confirme e verifique que o perfil e a outra inscrição continuam disponíveis. Arquive **as duas vagas de teste**. Em uma janela sem sessão, confirme que nenhuma vaga de teste segue publicada e que os dois links de detalhe deixaram de abrir as vagas. Exclua somente o perfil fictício e confira a remoção da inscrição restante. Saia e tente reabrir o banco de candidatos.

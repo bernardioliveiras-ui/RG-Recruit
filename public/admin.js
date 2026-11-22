@@ -1,9 +1,14 @@
+import { moneyToCents, adOrderState } from './admin-commerce.js';
+
 const jobStates = { draft: 'Rascunho', published: 'Publicada', archived: 'Arquivada' };
 const screening = { recebido: 'Recebido', em_analise: 'Em análise', selecionado: 'Selecionado', recusado: 'Recusado' };
 const criteria = { area: 'Área', skills: 'Habilidades', experience: 'Experiência', languages: 'Idiomas', location: 'Localização' };
 const sections = [
   ['Visão geral', '#admin', 'globe', ['dashboard']],
   ['Vagas', '#admin/vagas', 'case', ['jobs', 'jobForm', 'matches', 'applications']],
+  ['Pagamentos', '#admin/pagamentos', 'message', ['payments']],
+  ['Empresas', '#admin/empresas', 'case', ['companies']],
+  ['Parceiros', '#admin/parceiros', 'globe', ['partners']],
   ['Candidatos', '#admin/candidatos', 'profile', ['candidates', 'candidate']],
   ['Equipe', '#admin/equipe', 'message', ['users']],
 ];
@@ -12,6 +17,7 @@ export function adminRoute(hash) {
   const simple = new Map([
     ['#admin', 'dashboard'], ['#admin/instalacao', 'setup'], ['#admin/vagas', 'jobs'],
     ['#admin/vagas/nova', 'jobForm'], ['#admin/candidatos', 'candidates'], ['#admin/equipe', 'users'],
+    ['#admin/pagamentos','payments'], ['#admin/empresas','companies'], ['#admin/parceiros','partners'],
   ]);
   if (simple.has(hash)) return { view: simple.get(hash) };
   if (!hash.startsWith('#admin/')) return null;
@@ -310,32 +316,40 @@ function startAdmin() {
     return group('ad-page', head, ...body);
   }
 
-  function jobCard(job) {
+  function jobCard(job, orders = []) {
     const base = '#admin/vagas/' + job.id;
     const card = el('article', 'ad-card');
-    const labels = group('ad-meta', pill(jobStates[job.status], job.status === 'published' ? 'ad-green' : ''), el('span', '', job.area));
+    const situation = adOrderState(job, orders);
+    const labels = group('ad-meta', pill(situation.label, situation.kind === 'active' || situation.kind==='legacy' ? 'ad-green' : ''), el('span', '', job.area));
     card.append(labels, el('h3', '', job.title), el('p', 'ad-muted', place(job)),
       group('ad-actions', link('Ver inscritos', base + '/inscricoes'), link('Ver compatibilidade', base + '/compatibilidade'),
-        link('Editar vaga', base + '/editar')));
+        link('Editar vaga', base + '/editar'), link('Contratar / renovar anúncio', '#admin/pagamentos')));
     return card;
   }
   async function dashboard() {
-    const { counts, recent_jobs } = await adminRequest('stats');
+    const [{ counts, recent_jobs }, { orders }, { partners }, { jobs }] = await Promise.all([
+      adminRequest('stats'), adminRequest('orders'), adminRequest('partners'), adminRequest('jobs')]);
+    const paidLive = jobs.filter(job => adOrderState(job,orders).kind === 'active').length;
+    const unpaid = orders.filter(order=>order.status==='pending').length;
     const metrics = group('ad-kpis');
-    for (const [label, count, icon] of [['Vagas publicadas', counts.published_jobs, 'case'],
-      ['Candidatos no banco', counts.candidates, 'profile'], ['Inscrições recebidas', counts.applications, 'message']]) {
+    for (const [label, count, icon] of [['Anúncios ativos', paidLive, 'case'],
+      ['Pagamentos pendentes', unpaid, 'message'], ['Candidatos no banco', counts.candidates, 'profile'],
+      ['Parceiros ativos', partners.filter(p=>p.active).length, 'globe']]) {
       metrics.append(group('ad-kpi', group('ad-kpi-label', markIcon(icon), el('span', '', label)), el('strong', '', count)));
     }
     const recent = group('ad-list');
-    if (recent_jobs.length) recent.append(...recent_jobs.map(jobCard), link('Ver todas as vagas', '#admin/vagas'));
+    if (recent_jobs.length) recent.append(...recent_jobs.map(job=>jobCard(job,orders)), link('Ver todas as vagas', '#admin/vagas'));
     else recent.append(empty('Nenhuma vaga cadastrada', 'Crie a primeira vaga para começar a receber candidaturas.'));
-    return page('Visão geral', 'Acompanhe as vagas e o banco de talentos da equipe.', link('Nova vaga', '#admin/vagas/nova', 'button dark'),
-      metrics, section('Vagas recentes', recent));
+    const pendingActions=unpaid?group('ad-commerce-tip',el('strong','','Ações pendentes'),
+      el('p','','Existem cobranças aguardando conferência. Os anúncios novos só ficam visíveis após confirmar o recebimento.'),
+      link('Ver pagamentos','#admin/pagamentos','button dark')):null;
+    return page('Visão geral', 'Controle as vagas, as receitas e os parceiros da equipe Ramon.', link('Nova vaga', '#admin/vagas/nova', 'button dark'),
+      metrics,...(pendingActions?[pendingActions]:[]),section('Vagas recentes', recent));
   }
   async function jobsPage() {
-    const { jobs } = await adminRequest('jobs');
-    return page('Vagas', 'Consulte inscritos e encontre perfis para cada oportunidade.', link('Nova vaga', '#admin/vagas/nova', 'button dark'),
-      jobs.length ? group('ad-list', ...jobs.map(jobCard)) : empty('Nenhuma vaga cadastrada', 'Crie uma vaga para divulgar uma oportunidade.'));
+    const [{ jobs },{ orders }] = await Promise.all([adminRequest('jobs'),adminRequest('orders')]);
+    return page('Vagas & anúncios', 'Publique somente após receber o pagamento; o prazo é conferido automaticamente.', link('Nova vaga', '#admin/vagas/nova', 'button dark'),
+      jobs.length ? group('ad-list', ...jobs.map(job=>jobCard(job,orders))) : empty('Nenhuma vaga cadastrada', 'Crie uma vaga para divulgar uma oportunidade.'));
   }
   async function jobForm(id) {
     const job = id ? (await adminRequest('jobs')).jobs.find(item => item.id === id) : {};
@@ -359,7 +373,8 @@ function startAdmin() {
     }
     grid.append(field('min_years_experience', 'Anos mínimos de experiência', {
       value: job.min_years_experience ?? 0, type: 'number', min: 0, max: 100, step: 'any',
-    }), field('status', 'Estado da vaga', { choices: jobStates, value: job.status || 'draft' }));
+    }), field('status', 'Estado da vaga', { choices: id ? jobStates : {draft:'Rascunho'}, value: job.status || 'draft',
+      hint: 'Anúncios comerciais são publicados pela confirmação manual do pagamento.' }));
     form.append(grid);
     const initial = new FormData(form);
     formAction(form, id ? 'Salvar alterações' : 'Criar vaga', () => {
@@ -367,7 +382,7 @@ function startAdmin() {
       const changes = id ? values.filter(([key, value]) => initial.get(key) !== value) : values;
       return adminRequest(id ? 'jobs/' + id : 'jobs', { method: id ? 'PATCH' : 'POST', data: Object.fromEntries(changes) });
     }, () => go('#admin/vagas', id ? 'Vaga atualizada.' : 'Vaga criada.'));
-    return page(id ? 'Editar vaga' : 'Nova vaga', 'Os campos com * são obrigatórios. Vagas publicadas ficam visíveis no portal.', link('Voltar às vagas', '#admin/vagas'), form);
+    return page(id ? 'Editar vaga' : 'Nova vaga', 'Cadastre a vaga como rascunho e depois vincule uma cobrança em Pagamentos.', link('Voltar às vagas', '#admin/vagas'), form);
   }
   function statusForm(app) {
     const form = el('form', 'ad-status-form');
@@ -526,6 +541,183 @@ function startAdmin() {
       () => { form.reset(); go('#admin/equipe', 'Conta administrativa criada.'); });
     return page('Equipe', 'Gerencie as contas com acesso administrativo.', null, section('Administradores', list), section('Adicionar administrador', form));
   }
+
+  const euro = cents => new Intl.NumberFormat('pt-PT',{style:'currency',currency:'EUR'}).format(cents / 100);
+  const date = millis => millis ? new Intl.DateTimeFormat('pt-BR',{dateStyle:'medium'}).format(new Date(millis)) : '—';
+
+  function companyForm(company) {
+    const form = el('form','ad-form');
+    form.append(group('form-grid',
+      field('name','Nome da empresa',{value:company?.name||'',required:true,maxLength:160}),
+      field('country','País',{value:company?.country||'',required:true,maxLength:100}),
+      field('email','E-mail comercial',{type:'email',value:company?.email||'',maxLength:254}),
+      field('phone','Telefone comercial',{type:'tel',value:company?.phone||'',maxLength:40}),
+      field('active','Situação',{choices:{true:'Ativa',false:'Inativa'},value:company?.active===0?'false':'true'})));
+    formAction(form,company?'Salvar empresa':'Cadastrar empresa',()=>{
+      const data=Object.fromEntries(new FormData(form));
+      data.active=data.active==='true';
+      return adminRequest(company?'companies/'+company.id:'companies',{
+        method:company?'PATCH':'POST',data,
+      });
+    },()=>go('#admin/empresas',company?'Empresa atualizada.':'Empresa cadastrada.'));
+    return form;
+  }
+
+  async function companiesPage() {
+    const {companies}=await adminRequest('companies');
+    const cards=group('ad-commerce-grid');
+    for(const company of companies){
+      const card=el('article','ad-card ad-commerce-card');
+      card.append(group('ad-meta',pill(company.active?'Ativa':'Inativa',company.active?'ad-green':'')),
+        el('h3','',company.name),el('p','ad-muted',company.country));
+      const edit=el('details','ad-commerce-editor');
+      edit.append(el('summary','','Editar empresa'),companyForm(company));
+      card.append(edit);cards.append(card);
+    }
+    return page('Empresas anunciantes','As empresas pagam para divulgar. Candidatos não pagam e não existe acesso empresarial externo.',
+      link('Cadastrar vaga','#admin/vagas/nova','button dark'),
+      section('Cadastrar anunciante',companyForm()),
+      section('Empresas cadastradas',companies.length?cards:empty('Nenhuma empresa','Cadastre o primeiro anunciante.')));
+  }
+
+  function orderForm(jobs,companies) {
+    const form=el('form','ad-form');
+    const available=companies.filter(c=>c.active);
+    if(!jobs.length||!available.length){
+      form.append(notice('Cadastre primeiro uma empresa ativa e uma vaga em rascunho.'));
+      form.append(link('Cadastrar empresa','#admin/empresas'),link('Criar vaga','#admin/vagas/nova'));
+      return form;
+    }
+    form.append(group('form-grid',
+      field('job_id','Vaga a anunciar',{required:true,choices:Object.fromEntries(jobs.map(j=>[j.id,j.title+' · '+j.country]))}),
+      field('company_id','Empresa contratante',{required:true,choices:Object.fromEntries(available.map(c=>[c.id,c.name]))}),
+      field('amount_eur','Valor do anúncio (€)',{required:true,value:'149,00',hint:'Use 149,00 para €149 ou 149,90 para €149,90.',inputMode:'decimal'}),
+      field('duration_days','Período contratado (dias)',{required:true,type:'number',min:1,max:365,value:'30'})));
+    formAction(form,'Registrar cobrança pendente',()=>{
+      const data=Object.fromEntries(new FormData(form));
+      const amount_cents=moneyToCents(data.amount_eur);
+      if(amount_cents===null)throw Object.assign(new Error('Informe um valor entre €1,00 e €1.000.000,00.'),{status:400});
+      return adminRequest('orders',{method:'POST',data:{
+        job_id:Number(data.job_id),company_id:Number(data.company_id),amount_cents,duration_days:Number(data.duration_days),
+      }});
+    },()=>go('#admin/pagamentos','Cobrança registrada. Confirme o recebimento no banco antes de publicar.'));
+    return form;
+  }
+
+  function orderCard(order) {
+    const card=el('article','ad-card ad-commerce-card');
+    const kind=order.status;
+    card.append(group('ad-meta',pill(kind==='pending'?'Pagamento pendente':kind==='paid'?'Pago · aprovado':'Cancelado',kind==='paid'?'ad-green':'')),
+      el('h3','',order.company_name),el('p','ad-muted',order.job_title),facts([
+        ['Valor',euro(order.amount_cents)],['Período',order.duration_days+' dias'],
+        ['Início',date(order.starts_at_ms)],['Vencimento',date(order.expires_at_ms)],
+      ]));
+    if(kind==='pending'){
+      const form=el('form','ad-form ad-commerce-approval');
+      const confirm=el('label','ad-check-confirm');
+      const checkbox=el('input');checkbox.type='checkbox';checkbox.required=true;
+      confirm.append(checkbox,el('span','','Conferi o recebimento na conta autorizada.'));
+      form.append(confirm);
+      const button=formAction(form,'Confirmar recebimento e ativar',()=>{
+        if(!checkbox.checked)throw Object.assign(new Error('Confirme primeiro a conferência bancária.'),{status:400});
+        return adminRequest('orders/'+order.id+'/approve',{method:'POST',data:{}});
+      },()=>go('#admin/pagamentos','Pagamento registrado e prazo de anúncio atualizado.'),{style:'button dark'});
+      button.disabled=true;
+      checkbox.addEventListener('change',()=>{button.disabled=!checkbox.checked;});
+      card.append(form);
+      const cancel=el('details','ad-commerce-editor');
+      const cancelForm=el('form','ad-form');
+      const cancelCheck=field('confirmation','Digite CANCELAR para confirmar',{required:true,autocomplete:'off'});
+      cancelForm.append(cancelCheck);
+      const cancelButton=formAction(cancelForm,'Cancelar cobrança',()=>{
+        if(cancelForm.elements.confirmation.value!=='CANCELAR')throw Object.assign(new Error('Digite CANCELAR.'),{status:400});
+        return adminRequest('orders/'+order.id+'/cancel',{method:'POST',data:{}});
+      },()=>go('#admin/pagamentos','Cobrança cancelada.'),{style:'button ad-delete'});
+      cancelButton.disabled=true;
+      cancelForm.elements.confirmation.addEventListener('input',()=>{cancelButton.disabled=cancelForm.elements.confirmation.value!=='CANCELAR';});
+      cancel.append(el('summary','','Cancelar cobrança'),cancelForm);
+      card.append(cancel);
+    }
+    return card;
+  }
+
+  async function paymentsPage() {
+    const [{orders},{jobs},{companies}]=await Promise.all([
+      adminRequest('orders'),adminRequest('jobs'),adminRequest('companies')]);
+    const pending=orders.filter(o=>o.status==='pending');
+    const metrics=group('ad-kpis',
+      group('ad-kpi',el('span','ad-kpi-label','A receber (EUR)'),el('strong','',euro(pending.reduce((sum,o)=>sum+o.amount_cents,0)))),
+      group('ad-kpi',el('span','ad-kpi-label','Cobranças pendentes'),el('strong','',pending.length)),
+      group('ad-kpi',el('span','ad-kpi-label','Contratações registradas'),el('strong','',orders.length)));
+    return page('Controle de pagamentos','Cobranças manuais: Ramon confere a entrada no banco e aprova. Nenhuma API bancária está conectada.',
+      null,metrics,section('Nova contratação ou renovação',orderForm(jobs,companies)),
+      section('Histórico de cobranças',orders.length?group('ad-commerce-grid',...orders.map(orderCard)):
+        empty('Nenhuma cobrança','Registre uma contratação acima para começar.')),
+      notice('Aprovar aqui registra uma confirmação administrativa. Não movimenta dinheiro, não emite faturas e não consulta a Nickel.'));
+  }
+
+  function categoryForm(category) {
+    const form=el('form','ad-form');
+    form.append(group('form-grid',field('name','Nome da categoria',{value:category?.name||'',required:true,maxLength:80}),
+      field('position','Ordem de exibição',{type:'number',value:category?.position??0,min:0,max:100000})));
+    formAction(form,category?'Salvar categoria':'Adicionar categoria',()=>adminRequest(category?'categories/'+category.id:'categories',{
+      method:category?'PATCH':'POST',data:{name:form.elements.name.value,position:Number(form.elements.position.value)},
+    }),()=>go('#admin/parceiros',category?'Categoria atualizada.':'Categoria cadastrada.'));
+    return form;
+  }
+
+  function partnerForm(partner,categories) {
+    const form=el('form','ad-form');
+    form.append(group('form-grid',
+      field('name','Nome do parceiro',{value:partner?.name||'',required:true,maxLength:160}),
+      field('category_id','Categoria',{required:true,choices:Object.fromEntries(categories.map(c=>[c.id,c.name])),value:partner?.category_id||categories[0]?.id}),
+      field('description','Descrição',{type:'textarea',full:true,maxLength:1600,value:partner?.description||''}),
+      field('url','Site ou link do parceiro (HTTPS)',{type:'url',maxLength:500,value:partner?.url||''}),
+      field('logo_url','URL da logo (HTTPS)',{type:'url',maxLength:500,value:partner?.logo_url||''}),
+      field('contact','Contato privado para a equipe',{maxLength:160,value:partner?.contact||''}),
+      field('active','Exibição no portal',{choices:{true:'Ativo',false:'Oculto'},value:partner?.active===0?'false':'true'}),
+      field('position','Ordem',{type:'number',min:0,max:100000,value:partner?.position??0})));
+    formAction(form,partner?'Salvar parceiro':'Adicionar parceiro',()=>{
+      const data=Object.fromEntries(new FormData(form));
+      data.category_id=Number(data.category_id);data.position=Number(data.position);data.active=data.active==='true';
+      return adminRequest(partner?'partners/'+partner.id:'partners',{
+        method:partner?'PATCH':'POST',data,
+      });
+    },()=>go('#admin/parceiros',partner?'Parceiro atualizado.':'Parceiro cadastrado.'));
+    return form;
+  }
+
+  async function partnersPage() {
+    const [{categories},{partners}]=await Promise.all([adminRequest('categories'),adminRequest('partners')]);
+    const categoryList=group('ad-commerce-grid');
+    for(const category of categories){
+      const card=group('ad-card ad-commerce-card',el('h3','',category.name));
+      const edit=el('details','ad-commerce-editor');
+      edit.append(el('summary','','Renomear ou reordenar'),categoryForm(category));
+      card.append(edit,deletePanel({title:'Remover categoria',label:'Excluir categoria vazia',
+        description:'Só é possível excluir categorias sem parceiros. Os parceiros existentes devem ser movidos ou removidos antes.',
+        path:'categories/'+category.id,destination:'#admin/parceiros',success:'Categoria excluída.'}));
+      categoryList.append(card);
+    }
+    const partnerList=group('ad-commerce-grid');
+    for(const partner of partners){
+      const card=el('article','ad-card ad-commerce-card');
+      card.append(group('ad-meta',pill(partner.active?'Visível':'Oculto',partner.active?'ad-green':''),
+        el('span','',partner.category)),el('h3','',partner.name),el('p','ad-muted',partner.description));
+      const edit=el('details','ad-commerce-editor');
+      edit.append(el('summary','','Editar parceiro'),partnerForm(partner,categories));
+      card.append(edit,deletePanel({title:'Remover parceiro',label:'Excluir parceiro',
+        description:'O parceiro será removido do portal e do cadastro administrativo.',
+        path:'partners/'+partner.id,destination:'#admin/parceiros',success:'Parceiro removido.'}));
+      partnerList.append(card);
+    }
+    return page('Parceiros','Gerencie categorias, links, logos e visibilidade sem editar código.',null,
+      section('Nova categoria',categoryForm()),
+      section('Categorias',categoryList),
+      section('Adicionar parceiro',categories.length?partnerForm(null,categories):notice('Crie uma categoria primeiro.')),
+      section('Parceiros cadastrados',partners.length?partnerList:empty('Nenhum parceiro','Cadastre o primeiro parceiro de apoio.')));
+  }
+
   function missing() {
     return page('Registro indisponível', 'Confira o endereço ou volte ao painel.', link('Voltar ao painel', '#admin'));
   }
@@ -539,6 +731,9 @@ function startAdmin() {
       case 'candidates': return candidatesPage();
       case 'candidate': return candidatePage(id);
       case 'users': return teamPage();
+      case 'payments': return paymentsPage();
+      case 'companies': return companiesPage();
+      case 'partners': return partnersPage();
       default: return missing();
     }
   }

@@ -116,9 +116,10 @@ async function mountAdmin(hash, api) {
     get hash() { return hash; },
     set hash(value) { hash = value; queueMicrotask(handlers.hashchange); },
   };
-  const code = (await asset('admin.js')).replace(/^export /gmu, '');
+  const code = (await asset('admin.js')).replace(/^import .*$/gmu, '').replace(/^export /gmu, '');
+  const {moneyToCents,adOrderState}=await import('../public/admin-commerce.js');
   const document = {getElementById:() => root, createElement:t => new Control(t), createElementNS:(_, t) => new Control(t)};
-  runInNewContext(code, {document,
+  runInNewContext(code, {document,moneyToCents,adOrderState,
     window:{addEventListener:(event,fn) => { handlers[event] = fn; }, scrollTo(){}}, location, fetch:api, FormData:Fields, URLSearchParams});
   const settle = () => new Promise(resolve => setImmediate(resolve));
   const formWith = label => flatten(root).find(n => n.tag === 'form' && flatten(n).some(child => child.tag === 'button' && child.textContent === label));
@@ -224,11 +225,14 @@ test('dashboard reads only aggregates and candidate filters keep typed contact d
     calls.push({url, method:options.method, body:options.body && JSON.parse(options.body)});
     if (url.endsWith('/me')) return Response.json({admin:{id:1,email:'staff@example.invalid'}});
     if (url.endsWith('/stats')) return Response.json({counts:{published_jobs:7,candidates:23,applications:31},recent_jobs:[]});
+    if (url.endsWith('/orders')) return Response.json({orders:[{job_id:7,status:'paid',starts_at_ms:Date.now()-1000,expires_at_ms:Date.now()+100000},{job_id:8,status:'pending'}]});
+    if (url.endsWith('/partners')) return Response.json({partners:[{active:1}]});
+    if (url.endsWith('/jobs')) return Response.json({jobs:[{id:7,status:'published'}]});
     return Response.json({candidates:[]});
   };
   const {root, formWith, submit, navigate, settle, location} = await mountAdmin('#admin', api);
-  assert.deepEqual(calls.map(c => c.url), ['/api/admin/me','/api/admin/stats']);
-  for (const count of ['7','23','31']) assert.ok(flatten(root).some(n => n.textContent === count));
+  assert.deepEqual(calls.map(c => c.url), ['/api/admin/me','/api/admin/stats','/api/admin/orders','/api/admin/partners','/api/admin/jobs']);
+  for (const count of ['1','23']) assert.ok(flatten(root).some(n => n.textContent === count));
   await navigate('#admin/candidatos');
   for (const q of ['Pessoa de teste','staff@example.invalid','+12025550147']) {
     const form = formWith('Filtrar');

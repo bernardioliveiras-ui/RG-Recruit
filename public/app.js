@@ -1,3 +1,5 @@
+import { loadPartners } from './partners.js';
+
 export function publicRoute(hash) {
   if (/^#admin(?:\/|$)/u.test(hash)) return { view: 'admin' };
   const match = /^#vaga\/([1-9]\d*)(\/candidatura)?$/u.exec(hash);
@@ -125,6 +127,7 @@ function startPortal() {
   const status = $('jobs-status');
   const detail = $('job-detail');
   const detailStatus = $('detail-status');
+  loadPartners($('partners-list'),$('partners-status'));
   const submit = $('submit-application');
   const experienceList = $('experience-entries');
   const addExperience = $('add-experience');
@@ -446,7 +449,7 @@ function startPortal() {
     document.title = 'Ramon Gama — Recrutamento';
     if (home) {
       if (previous !== 'home') loadJobs();
-      const anchor = ['#inicio', '#vagas', '#como-funciona', '#candidate-root'].includes(hash) && $(hash.slice(1));
+      const anchor = ['#inicio', '#vagas', '#parceiros', '#como-funciona', '#candidate-root'].includes(hash) && $(hash.slice(1));
       if (anchor) {
         anchor.scrollIntoView();
         if (previous && hash !== '#inicio') anchor.focus({ preventScroll: true });

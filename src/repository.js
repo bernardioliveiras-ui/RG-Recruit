@@ -3,6 +3,12 @@ const publicJobColumns = `
   min_years_experience, status, created_at, updated_at
 `;
 
+// Existing vacancies with no commercial order are preserved as legacy listings.
+// Once a vacancy has a paid-ad order, payment AND the current time control visibility.
+const paidVisibility = `((jobs.billing_required=0 AND NOT EXISTS (SELECT 1 FROM ad_orders orders WHERE orders.job_id=jobs.id))
+  OR EXISTS (SELECT 1 FROM ad_orders active WHERE active.job_id=jobs.id
+    AND active.status='paid' AND active.starts_at_ms<=? AND active.expires_at_ms>?))`;
+
 function decodeJob(row) {
   return {
     ...row,
@@ -14,8 +20,9 @@ function decodeJob(row) {
 }
 
 export async function listPublishedJobs(db, { country = '', area = '' } = {}) {
-  const clauses = ["status = 'published'"];
-  const values = [];
+  const clauses = ["status = 'published'",paidVisibility];
+  const moment = Date.now();
+  const values = [moment,moment];
   if (country) {
     clauses.push('country = ?');
     values.push(country);
@@ -35,12 +42,13 @@ export async function listPublishedJobs(db, { country = '', area = '' } = {}) {
 
 export async function findPublishedJob(db, id) {
   const row = await db.prepare(`
-    SELECT ${publicJobColumns} FROM jobs WHERE id = ? AND status = 'published'
-  `).bind(id).first();
+    SELECT ${publicJobColumns} FROM jobs WHERE id = ? AND status = 'published' AND ${paidVisibility}
+  `).bind(id,Date.now(),Date.now()).first();
   return row ? decodeJob(row) : null;
 }
 
 export async function upsertCandidateAndApply(db, profile, jobId) {
+  const moment = Date.now();
   const [, , job] = await db.batch([
     db.prepare(`
       INSERT INTO candidates (
@@ -48,22 +56,22 @@ export async function upsertCandidateAndApply(db, profile, jobId) {
         qualifications, willing_to_relocate, notes
       )
       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-      WHERE EXISTS (SELECT 1 FROM jobs WHERE id = ? AND status = 'published')
+      WHERE EXISTS (SELECT 1 FROM jobs WHERE id = ? AND status = 'published' AND ${paidVisibility})
       ON CONFLICT(phone) DO NOTHING
     `).bind(
       profile.name, profile.phone, profile.email, profile.country, profile.city,
       JSON.stringify(profile.areas), profile.years_experience, JSON.stringify(profile.experiences),
       JSON.stringify(profile.skills), JSON.stringify(profile.languages), JSON.stringify(profile.qualifications),
-      Number(profile.willing_to_relocate), profile.notes, jobId,
+      Number(profile.willing_to_relocate), profile.notes, jobId,moment,moment,
     ),
     db.prepare(`
       INSERT INTO applications (candidate_id, job_id)
       SELECT candidates.id, jobs.id FROM candidates
-      JOIN jobs ON jobs.id = ? AND jobs.status = 'published'
+      JOIN jobs ON jobs.id = ? AND jobs.status = 'published' AND ${paidVisibility}
       WHERE candidates.phone = ?
       ON CONFLICT(candidate_id, job_id) DO NOTHING
-    `).bind(jobId, profile.phone),
-    db.prepare("SELECT id FROM jobs WHERE id = ? AND status = 'published'").bind(jobId),
+    `).bind(jobId,moment,moment,profile.phone),
+    db.prepare(`SELECT id FROM jobs WHERE id = ? AND status = 'published' AND ${paidVisibility}`).bind(jobId,moment,moment),
   ]);
   return job.results.length > 0;
 }
@@ -141,6 +149,16 @@ export async function getJob(db, id) {
   return row ? decodeJob(row) : null;
 }
 
+export async function canPublishJob(db, id) {
+  const time = Date.now();
+  const row = await db.prepare(`SELECT jobs.id FROM jobs WHERE jobs.id = ? AND
+    (jobs.billing_required = 0 OR EXISTS (
+      SELECT 1 FROM ad_orders active WHERE active.job_id=jobs.id
+      AND active.status='paid' AND active.starts_at_ms<=? AND active.expires_at_ms>?
+    ))`).bind(id,time,time).first();
+  return Boolean(row);
+}
+
 const writableJobFields = [
   'title', 'area', 'country', 'city', 'description', 'requirements', 'skills', 'required_skills',
   'languages', 'qualifications', 'min_years_experience', 'status',
@@ -154,7 +172,7 @@ function jobValue(job, field) {
 export async function createJob(db, job) {
   const fields = writableJobFields;
   const row = await db.prepare(`
-    INSERT INTO jobs (${fields.join(', ')}) VALUES (${fields.map(() => '?').join(', ')})
+    INSERT INTO jobs (${fields.join(', ')}, billing_required) VALUES (${fields.map(() => '?').join(', ')}, 1)
     RETURNING ${publicJobColumns}
   `).bind(...fields.map(field => jobValue(job, field))).first();
   return decodeJob(row);

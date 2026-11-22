@@ -94,7 +94,7 @@ test('editable field outlines meet 3:1 contrast on the white applicant form', as
 
 test('announces detail loading and focuses the final heading for success, missing job and fetch failure', async () => {
   const { runInNewContext } = await import('node:vm');
-  const code = (await asset('app.js')).replace(/^export /gmu, '');
+  const code = (await asset('app.js')).replace(/^import .*$/gmu, '').replace(/^export /gmu, '');
   const html = await asset('index.html');
   for (const [response, title] of [
     [Response.json({ job: { id: 1, title: 'Título de teste', country: 'Brasil', area: 'Teste',
@@ -131,7 +131,7 @@ test('announces detail loading and focuses the final heading for success, missin
       createTextNode: text => text,
     };
     const request = Promise.withResolvers();
-    runInNewContext(code, { document, location: { hash: '#vaga/1' },
+    runInNewContext(code, { document, loadPartners:()=>{}, location: { hash: '#vaga/1' },
       window: { addEventListener() {}, scrollTo() {} }, fetch: () => request.promise });
     const status = document.getElementById('detail-status');
     assert.equal(status.textContent, 'Carregando vaga…');
