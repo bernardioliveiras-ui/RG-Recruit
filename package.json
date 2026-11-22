@@ -1,0 +1,14 @@
+{
+  "name": "rg-recruit",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "devDependencies": { "wrangler": "^4.36.0" },
+  "scripts": {
+    "test": "node --test",
+    "dev": "wrangler dev --ip 127.0.0.1",
+    "deploy": "node scripts/check-launch-readiness.mjs && wrangler deploy",
+    "db:local": "wrangler d1 migrations apply DB --local",
+    "db:remote": "wrangler d1 migrations apply DB --remote"
+  }
+}

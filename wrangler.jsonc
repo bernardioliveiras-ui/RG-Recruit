@@ -1,0 +1,32 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "rg-recruit",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-22",
+  "vars": {
+    "PRIVACY_READY": "false",
+    "TURNSTILE_SITE_KEY": "",
+    "TURNSTILE_HOSTNAME": ""
+  },
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "rg-recruit",
+      // Replace with the production D1 database UUID before deployment.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "ratelimits": [
+    {
+      "name": "APPLICATION_RATE_LIMITER",
+      "namespace_id": "1001",
+      "simple": { "limit": 12, "period": 60 }
+    }
+  ]
+}
