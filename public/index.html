@@ -46,11 +46,77 @@
             <a class="button gold" href="#vagas">Encontrar oportunidades <svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a>
           </div>
           <div class="atlas" aria-hidden="true">
-            <div class="atlas-grid"></div>
-            <div class="orbit orbit-outer"></div><div class="orbit orbit-middle"></div>
-            <div class="globe"><i></i><i></i><i></i><b></b><b></b><b></b></div>
-            <div class="trajectory"><i></i><b></b></div>
-            <img class="hero-mark" src="/assets/rg-mark.png" alt="" width="340" height="340">
+            <svg class="world-map" viewBox="0 0 780 480" xmlns="http://www.w3.org/2000/svg" focusable="false">
+              <defs>
+                <linearGradient id="map-land" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" stop-color="#b69a68" stop-opacity=".66"/>
+                  <stop offset=".55" stop-color="#7c6a4e" stop-opacity=".37"/>
+                  <stop offset="1" stop-color="#f2d79d" stop-opacity=".53"/>
+                </linearGradient>
+                <linearGradient id="map-route-gold" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0" stop-color="#9f8151" stop-opacity=".18"/>
+                  <stop offset=".5" stop-color="#efcb80" stop-opacity=".82"/>
+                  <stop offset="1" stop-color="#dca85b" stop-opacity=".36"/>
+                </linearGradient>
+                <radialGradient id="map-europe-light">
+                  <stop offset="0" stop-color="#f8d991" stop-opacity=".25"/>
+                  <stop offset="1" stop-color="#f8d991" stop-opacity="0"/>
+                </radialGradient>
+              </defs>
+              <g class="map-grid">
+                <path d="M22 120H758M22 180H758M22 240H758M22 300H758M22 360H758"/>
+                <path d="M110 55V425M210 55V425M310 55V425M410 55V425M510 55V425M610 55V425M710 55V425"/>
+                <ellipse cx="390" cy="240" rx="370" ry="190"/>
+                <path d="M390 48C250 105 250 375 390 432M390 48C530 105 530 375 390 432"/>
+              </g>
+              <circle class="map-europe-glow" cx="415" cy="186" r="152" fill="url(#map-europe-light)"/>
+              <g class="map-routes">
+                <path class="map-route" d="M238 306Q302 89 416 178"/>
+                <path class="map-route" d="M416 178Q262 49 153 172"/>
+                <path class="map-route" d="M416 178Q548 80 640 187"/>
+                <path class="map-route" d="M416 178Q590 90 672 339"/>
+                <path class="map-route" d="M416 178Q438 258 402 288"/>
+              </g>
+              <g class="map-continents">
+                <!-- América do Norte e América Central -->
+                <path class="map-landmass" d="M53 135L76 109 97 105 107 83 136 72 159 84 179 78 199 91 221 95 227 111 211 122 196 126 191 144 174 148 165 164 151 165 141 181 132 190 129 209 144 223 151 237 144 248 132 232 120 222 118 203 104 200 101 184 88 183 80 169 65 160 47 161 37 149Z"/>
+                <path class="map-landmass" d="M130 215L148 220 158 229 161 241 174 249 183 256 175 266 162 258 154 248 141 244Z"/>
+                <!-- Groenlândia -->
+                <path class="map-landmass" d="M223 66L248 56 277 68 280 83 269 95 256 99 245 120 229 113 217 94Z"/>
+                <!-- América do Sul -->
+                <path class="map-landmass" d="M180 250L200 237 225 247 245 256 266 273 269 293 259 314 263 330 252 352 243 362 237 386 222 404 213 398 211 376 201 357 199 337 188 322 191 301 177 286 175 267Z"/>
+                <!-- Europa -->
+                <path class="map-landmass map-europe-highlight" d="M356 144L375 135 386 139 395 130 409 139 423 136 437 145 449 154 447 163 434 166 430 182 416 180 408 193 398 186 387 192 377 185 367 186 361 176 350 172 346 162Z"/>
+                <path class="map-landmass" d="M380 188L389 197 390 209 383 212 375 204Z"/>
+                <!-- África -->
+                <path class="map-landmass" d="M361 206L377 192 397 198 420 205 440 222 455 245 449 262 439 278 430 295 416 323 402 342 390 332 386 314 376 303 372 282 356 262 350 240 355 220Z"/>
+                <path class="map-landmass" d="M457 316L468 326 467 347 459 360 452 350Z"/>
+                <!-- Ásia -->
+                <path class="map-landmass" d="M438 135L455 117 482 115 490 98 513 98 532 86 559 88 576 99 601 93 624 101 654 111 677 128 704 137 722 157 719 171 702 180 687 173 677 187 653 188 640 205 621 204 612 218 593 216 581 230 564 218 559 199 546 189 535 181 515 186 504 178 490 190 480 184 467 196 460 182 448 176 449 154Z"/>
+                <path class="map-landmass" d="M502 196L514 218 518 240 528 259 519 271 509 251 502 233 496 213Z"/>
+                <path class="map-landmass" d="M571 228L590 240 609 244 621 259 635 267 638 279 624 278 612 270 596 266 587 254 573 246Z"/>
+                <path class="map-landmass" d="M632 280L644 286 654 299 648 306 636 300Z"/>
+                <!-- Austrália e Oceania -->
+                <path class="map-landmass" d="M628 317L648 306 675 309 699 324 713 340 708 359 695 371 674 369 661 379 645 372 629 357 620 341Z"/>
+                <path class="map-landmass" d="M722 379L732 392 729 411 721 404Z"/>
+              </g>
+              <g class="map-points">
+                <circle class="map-node" cx="153" cy="172" r="4"/>
+                <circle class="map-node" cx="238" cy="306" r="4"/>
+                <circle class="map-node" cx="640" cy="187" r="4"/>
+                <circle class="map-node" cx="672" cy="339" r="4"/>
+                <circle class="map-node" cx="402" cy="288" r="4"/>
+                <circle class="map-node-halo" cx="416" cy="178" r="17"/>
+                <circle class="map-node" cx="416" cy="178" r="5"/>
+              </g>
+              <g class="map-labels">
+                <text x="103" y="272">AMÉRICAS</text>
+                <text class="map-europe-label" x="415" y="114" text-anchor="middle">EUROPA</text>
+                <text x="577" y="152">ÁSIA</text>
+                <text x="654" y="411">OCEANIA</text>
+              </g>
+            </svg>
+            <div class="world-map-caption"><span class="world-live-dot"></span><span>CONEXÕES INTERNACIONAIS</span><span class="world-map-caption-line"></span><strong>SEM FRONTEIRAS</strong></div>
           </div>
         </div>
       </section>
