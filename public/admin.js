@@ -118,6 +118,10 @@ export function matchCard(match) {
   const card = el('article', 'ad-card ad-match');
   const nonApplicant = score > 0 ? pill('Compatível sem inscrição', 'ad-amber') : pill('Não inscrito');
   const meta = group('ad-meta', applied ? pill('Inscrito', 'ad-green') : nonApplicant);
+  const band = match.band || (score >= 80 ? 'high' : score >= 55 ? 'review' : 'other');
+  meta.append(pill({high:'Prioridade alta',review:'Revisão humana',other:'Outros perfis'}[band],
+    band === 'high' ? 'ad-green' : band === 'review' ? 'ad-amber' : ''));
+  if (match.missing_information) meta.append(pill('Dados a confirmar', 'ad-amber'));
   if (applied) meta.append(el('span', '', screening[match.status]));
   const details = el('details', 'ad-explanation');
   const points = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
@@ -126,9 +130,11 @@ export function matchCard(match) {
   ]);
   const reasonList = el('ul');
   for (const reason of reasons) reasonList.append(el('li', '', reason));
+  for (const flag of match.review_flags || []) reasonList.append(el('li', 'ad-flag', flag));
   details.append(el('summary', '', 'Composição da pontuação'), facts(rows), reasonList);
   card.append(group('ad-card-head', group('', personName(candidate), el('p', 'ad-muted', place(candidate))),
     group('ad-score', el('strong', '', score + '%'), el('small', '', 'Compatibilidade'))), meta, details);
+  if (match.review_flags?.length) card.append(notice('Requisitos obrigatórios pendentes de confirmação — não é uma recusa automática.'));
   return card;
 }
 
@@ -343,8 +349,13 @@ function startAdmin() {
       grid.append(field(name, label, { value: job[name] ?? '', type: multiline ? 'textarea' : 'text', maxLength,
         full: multiline || name === 'title', required: ['title', 'area', 'country', 'description'].includes(name) }));
     }
-    for (const [name, label] of [['skills', 'Habilidades'], ['languages', 'Idiomas']]) {
-      grid.append(field(name, label, { value: job[name]?.join(', ') ?? '', hint: 'Separe os itens com vírgulas.', maxLength: 5098 }));
+    for (const [name, label, hint] of [
+      ['required_skills', 'Tarefas obrigatórias', 'Tarefas críticas para confirmar antes de entrevistar. Não eliminam automaticamente.'],
+      ['skills', 'Tarefas desejáveis', 'Habilidades que valorizam o perfil, mas não são obrigatórias.'],
+      ['languages', 'Idiomas', 'Indique os idiomas relevantes para esta função.'],
+      ['qualifications', 'Cursos e qualificações', 'Ex.: HACCP, segurança alimentar.'],
+    ]) {
+      grid.append(field(name, label, { value: job[name]?.join(', ') ?? '', hint: hint + ' Separe com vírgulas.', maxLength: 5098 }));
     }
     grid.append(field('min_years_experience', 'Anos mínimos de experiência', {
       value: job.min_years_experience ?? 0, type: 'number', min: 0, max: 100, step: 'any',
@@ -387,7 +398,14 @@ function startAdmin() {
     if (ranking) {
       const result = await adminRequest('jobs/' + id + '/matches');
       job = result.job;
-      content = result.matches.length ? group('ad-list', ...result.matches.map(matchCard)) :
+      const tiers = [
+        ['high', 'Mais compatíveis'], ['review', 'Revisar'], ['other', 'Outros perfis'],
+      ];
+      content = result.matches.length ? group('ad-ranking', ...tiers.map(([band, title]) => {
+        const people = result.matches.filter(m => (m.band || (m.score >= 80 ? 'high' : m.score >= 55 ? 'review' : 'other')) === band);
+        return people.length ? group('ad-match-tier', el('h3', 'ad-tier-title', `${title} (${people.length})`),
+          group('ad-list', ...people.map(matchCard))) : null;
+      }).filter(Boolean)) :
         empty('Banco de talentos vazio', 'Os perfis aparecerão aqui após a primeira candidatura no portal.');
     } else {
       const [{ jobs }, { applications }] = await Promise.all([adminRequest('jobs'), adminRequest('applications?job_id=' + id)]);
@@ -470,15 +488,25 @@ function startAdmin() {
     const profile = section('Experiência profissional', facts([
       ['Áreas', displayList(c.areas)], ['Experiência', Number(c.years_experience).toLocaleString('pt-BR') + ' ano(s)'],
       ['Habilidades', displayList(c.skills)], ['Idiomas', displayList(c.languages)],
+      ['Qualificações', displayList(c.qualifications)],
       ['Disponibilidade para mudança', c.willing_to_relocate ? 'Sim' : 'Não'], ['Observações', c.notes],
     ]));
+    const roleHistory = Array.isArray(c.experiences) ? c.experiences : [];
+    const experienceByRole = section('Funções detalhadas', roleHistory.length
+      ? group('ad-list', ...roleHistory.map(exp => group('ad-card',
+        el('h3', '', exp.area), facts([
+          ['Anos nesta função', Number(exp.years).toLocaleString('pt-BR') + ' ano(s)'],
+          ['Tarefas práticas', displayList(exp.skills)],
+        ]))))
+      : notice('Cadastro anterior sem detalhamento por função. Confirme as tarefas e os anos durante a entrevista.'));
     const list = applications.length ? group('ad-list', ...applications.map(app => applicationCard(app, true))) :
       empty('Nenhuma inscrição', 'As vagas às quais esta pessoa se candidatar aparecerão aqui.');
     const deletion = deletePanel({ title: 'Excluir cadastro', label: 'Excluir perfil e inscrições',
       description: 'A exclusão remove permanentemente este perfil e todas as suas inscrições.',
       path: 'candidates/' + c.id, destination: '#admin/candidatos', success: 'Perfil e inscrições excluídos.' });
     deletion.className += ' ad-panel';
-    return page(c.name, 'Perfil do candidato', link('Voltar ao banco', '#admin/candidatos'), contact, profile, section('Inscrições', list), deletion);
+    return page(c.name, 'Perfil do candidato', link('Voltar ao banco', '#admin/candidatos'), contact, profile,
+      experienceByRole, section('Inscrições', list), deletion);
   }
   async function teamPage() {
     const { users } = await adminRequest('users');

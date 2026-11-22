@@ -48,6 +48,32 @@ function result(value, errors) {
   return Object.keys(errors).length ? { ok: false, errors } : { ok: true, value };
 }
 
+function readExperiences(input, errors) {
+  const raw = input.experiences;
+  if (raw == null) return [];
+  if (!Array.isArray(raw) || raw.length > 8) {
+    errors.experiences = 'Informe no máximo 8 experiências profissionais.';
+    return [];
+  }
+  const experiences = [];
+  for (const item of raw) {
+    if (!isRecord(item)) {
+      errors.experiences = 'Cada experiência deve informar função, anos e tarefas.';
+      return [];
+    }
+    const nestedErrors = {};
+    const area = readText(item, nestedErrors, 'area', 100, true);
+    const years = readYears(item, nestedErrors, 'years', true);
+    const skills = readList(item, nestedErrors, 'skills');
+    if (Object.keys(nestedErrors).length) {
+      errors.experiences = 'Revise a função, os anos e as tarefas de cada experiência.';
+      return [];
+    }
+    experiences.push({ area, years, skills });
+  }
+  return experiences;
+}
+
 export function validateApplicant(input) {
   if (!isRecord(input)) return { ok: false, errors: { form: 'Informe os dados da candidatura.' } };
 
@@ -76,8 +102,10 @@ export function validateApplicant(input) {
     city: readText(input, errors, 'city', 100),
     areas: readList(input, errors, 'areas'),
     years_experience: readYears(input, errors, 'years_experience', true),
+    experiences: readExperiences(input, errors),
     skills: readList(input, errors, 'skills'),
     languages: readList(input, errors, 'languages'),
+    qualifications: readList(input, errors, 'qualifications'),
     willing_to_relocate: input.willing_to_relocate === true,
     notes: readText(input, errors, 'notes', 2000),
     consent: input.consent === true,
@@ -99,7 +127,9 @@ export function validateJob(input) {
     description: readText(input, errors, 'description', 6000, true),
     requirements: readText(input, errors, 'requirements', 6000),
     skills: readList(input, errors, 'skills'),
+    required_skills: readList(input, errors, 'required_skills'),
     languages: readList(input, errors, 'languages'),
+    qualifications: readList(input, errors, 'qualifications'),
     min_years_experience: readYears(input, errors, 'min_years_experience'),
     status,
   }, errors);

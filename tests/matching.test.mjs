@@ -58,6 +58,61 @@ test('matches multilingual country names to the same residence criterion', () =>
   const applicant = { areas: ['Desossa'], country: 'Espanha' };
   assert.equal(scoreCandidate(vacancy, applicant).score, 100);
   assert.equal(scoreCandidate(vacancy, { ...applicant, country: 'ES' }).score, 100);
-  assert.equal(scoreCandidate(vacancy, { ...applicant, country: 'Portugal' }).score, 75);
+  assert.equal(scoreCandidate(vacancy, { ...applicant, country: 'Portugal' }).score, 71);
   assert.equal(scoreCandidate({ country: 'País novo' }, { country: 'pais novo' }).score, 100);
+});
+
+test('prioritizes real practical tasks at 35 percent and uses approved weights', () => {
+  const vacancy = {
+    area: 'Desossa', required_skills: ['Culatra'], skills: ['Serra do peito'],
+    min_years_experience: 4, country: 'Portugal', languages: ['Português'],
+  };
+  const applicant = {
+    areas: ['Desossa'], experiences: [{area:'Desossa', years:4, skills:['Culatra']}],
+    country: 'Portugal', languages: ['Português'],
+  };
+  const result = scoreCandidate(vacancy, applicant);
+  assert.equal(result.score, 88);
+  assert.equal(result.breakdown.area.weight, 25);
+  assert.equal(result.breakdown.skills.weight, 35);
+  assert.equal(result.breakdown.experience.weight, 20);
+  assert.equal(result.breakdown.location.weight, 10);
+  assert.equal(result.breakdown.languages.weight, 10);
+  assert.deepEqual(result.review_flags, []);
+  assert.equal(result.band, 'high');
+});
+
+test('flags mandatory tasks as unverified while keeping candidates visible', () => {
+  const result = scoreCandidate({area:'Abate', required_skills:['Retirada da cabeça']},
+    {areas:['Abate'], skills:['Serra do peito']});
+  assert.equal(result.score, 42);
+  assert.equal(result.band, 'other');
+  assert.deepEqual(result.review_flags, ['Confirmar tarefa obrigatória: Retirada da cabeça.']);
+  assert.equal(result.missing_information, true);
+});
+
+test('never credits unrelated years from another role', () => {
+  const vacancy = {area:'Desossa', min_years_experience:4};
+  const applicant = {areas:['Abate', 'Desossa'], years_experience:15,
+    experiences:[{area:'Abate',years:15,skills:['Sangria']}],};
+  const result = scoreCandidate(vacancy, applicant);
+  assert.equal(result.score, 56); // 25 pontos em 45 configurados.
+  assert.equal(result.breakdown.experience.earned, 0);
+  assert.equal(result.missing_information, true);
+});
+
+test('combines languages and relevant qualifications in the final 10 percent', () => {
+  const vacancy = {languages:['Espanhol'], qualifications:['HACCP']};
+  const applicant = {languages:['espanhol'], qualifications:[]};
+  const result = scoreCandidate(vacancy, applicant);
+  assert.equal(result.score, 50);
+  assert.equal(result.breakdown.languages.weight, 10);
+  assert.equal(result.missing_information, true);
+});
+
+test('does not score sensitive attributes even with mandatory requirements', () => {
+  const vacancy = {area:'Abate', required_skills:['Culatra'], country:'Espanha'};
+  const applicant = {areas:['Abate'], skills:['Culatra'], country:'Portugal', willing_to_relocate:true};
+  assert.deepEqual(scoreCandidate(vacancy, {...applicant, gender:'masculino', age:25, nationality:'Espanhola'}),
+    scoreCandidate(vacancy, {...applicant, gender:'feminino', age:55, nationality:'Brasileira'}));
 });

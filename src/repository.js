@@ -1,5 +1,5 @@
 const publicJobColumns = `
-  id, title, area, country, city, description, requirements, skills, languages,
+  id, title, area, country, city, description, requirements, skills, required_skills, languages, qualifications,
   min_years_experience, status, created_at, updated_at
 `;
 
@@ -7,7 +7,9 @@ function decodeJob(row) {
   return {
     ...row,
     skills: JSON.parse(row.skills),
+    required_skills: JSON.parse(row.required_skills),
     languages: JSON.parse(row.languages),
+    qualifications: JSON.parse(row.qualifications),
   };
 }
 
@@ -42,16 +44,17 @@ export async function upsertCandidateAndApply(db, profile, jobId) {
   const [, , job] = await db.batch([
     db.prepare(`
       INSERT INTO candidates (
-        name, phone, email, country, city, areas, years_experience, skills, languages,
-        willing_to_relocate, notes
+        name, phone, email, country, city, areas, years_experience, experiences, skills, languages,
+        qualifications, willing_to_relocate, notes
       )
-      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
       WHERE EXISTS (SELECT 1 FROM jobs WHERE id = ? AND status = 'published')
       ON CONFLICT(phone) DO NOTHING
     `).bind(
       profile.name, profile.phone, profile.email, profile.country, profile.city,
-      JSON.stringify(profile.areas), profile.years_experience, JSON.stringify(profile.skills),
-      JSON.stringify(profile.languages), Number(profile.willing_to_relocate), profile.notes, jobId,
+      JSON.stringify(profile.areas), profile.years_experience, JSON.stringify(profile.experiences),
+      JSON.stringify(profile.skills), JSON.stringify(profile.languages), JSON.stringify(profile.qualifications),
+      Number(profile.willing_to_relocate), profile.notes, jobId,
     ),
     db.prepare(`
       INSERT INTO applications (candidate_id, job_id)
@@ -139,12 +142,13 @@ export async function getJob(db, id) {
 }
 
 const writableJobFields = [
-  'title', 'area', 'country', 'city', 'description', 'requirements', 'skills',
-  'languages', 'min_years_experience', 'status',
+  'title', 'area', 'country', 'city', 'description', 'requirements', 'skills', 'required_skills',
+  'languages', 'qualifications', 'min_years_experience', 'status',
 ];
 
 function jobValue(job, field) {
-  return field === 'skills' || field === 'languages' ? JSON.stringify(job[field]) : job[field];
+  return ['skills', 'required_skills', 'languages', 'qualifications'].includes(field)
+    ? JSON.stringify(job[field]) : job[field];
 }
 
 export async function createJob(db, job) {
@@ -169,6 +173,7 @@ export async function patchJob(db, id, job, patch) {
 function decodeCandidate(row) {
   return {
     ...row, areas: JSON.parse(row.areas), skills: JSON.parse(row.skills),
+    experiences: JSON.parse(row.experiences), qualifications: JSON.parse(row.qualifications),
     languages: JSON.parse(row.languages), willing_to_relocate: Boolean(row.willing_to_relocate),
   };
 }
@@ -191,7 +196,7 @@ export async function listCandidates(db, { q, country, area }, jobId) {
   const where = clauses.length ? 'WHERE ' + clauses.join(' AND ') : '';
   const fields = 'c.id, c.name, c.country, c.city, c.areas, c.years_experience';
   const join = jobId ? 'LEFT JOIN applications a ON a.candidate_id = c.id AND a.job_id = ?' : '';
-  const extra = jobId ? ', c.skills, c.languages, c.willing_to_relocate, a.id AS application_id, a.status' : '';
+  const extra = jobId ? ', c.skills, c.languages, c.qualifications, c.experiences, c.willing_to_relocate, a.id AS application_id, a.status' : '';
   const stmt = db.prepare(`SELECT ${fields}${extra} FROM candidates c ${join} ${where} ORDER BY c.name COLLATE NOCASE, c.id`);
   if (jobId) values.unshift(jobId);
   const { results } = await (values.length ? stmt.bind(...values) : stmt).all();

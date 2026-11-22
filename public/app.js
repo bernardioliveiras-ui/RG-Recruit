@@ -12,8 +12,19 @@ export function filterJobs(jobs, country, area) {
 export function applicationPayload(data, jobId, token) {
   const payload = Object.fromEntries(data);
   delete payload['cf-turnstile-response'];
+  const history = new Map();
+  for (const [name, value] of data) {
+    const match = /^experience_(area|years|skills)_([0-7])$/u.exec(name);
+    if (!match) continue;
+    if (!history.has(match[2])) history.set(match[2], {});
+    history.get(match[2])[match[1]] = value.trim();
+    delete payload[name];
+  }
+  const experiences = [...history].sort(([a], [b]) => Number(a) - Number(b))
+    .map(([, entry]) => ({ area: entry.area || '', years: entry.years || '', skills: entry.skills || '' }))
+    .filter(entry => entry.area || entry.years || entry.skills);
   return {
-    ...payload, job_id: jobId, consent: data.has('consent'),
+    ...payload, experiences, job_id: jobId, consent: data.has('consent'),
     willing_to_relocate: data.has('willing_to_relocate'), turnstile_token: token,
   };
 }
@@ -115,6 +126,8 @@ function startPortal() {
   const detail = $('job-detail');
   const detailStatus = $('detail-status');
   const submit = $('submit-application');
+  const experienceList = $('experience-entries');
+  const addExperience = $('add-experience');
   let jobs = [];
   let listVersion = 0;
   let routeVersion = 0;
@@ -126,6 +139,43 @@ function startPortal() {
   let sitekey = '';
   let token = '';
   let sending = false;
+
+  addExperience.addEventListener('click', () => {
+    const indexes = new Set([...experienceList.querySelectorAll('[data-experience-index]')]
+      .map(node => Number(node.dataset.experienceIndex)));
+    const index = Array.from({ length: 8 }, (_, i) => i).find(i => !indexes.has(i));
+    if (index == null) return;
+    const entry = el('div', 'experience-entry');
+    entry.dataset.experienceIndex = String(index);
+    for (const [key, title, type, placeholder, max] of [
+      ['area', 'Função ou área', 'text', 'Ex.: Abate', 100],
+      ['years', 'Anos nesta função', 'number', 'Ex.: 3', 0],
+      ['skills', 'Tarefas feitas na prática', 'text', 'Ex.: sangria, corte da cabeça', 5098],
+    ]) {
+      const wrap = el('div', key === 'skills' ? 'field full' : 'field');
+      const label = el('label', '', title);
+      const input = el('input');
+      input.id = 'experience-' + key + '-' + index;
+      input.name = 'experience_' + key + '_' + index;
+      input.type = type;
+      input.setAttribute('aria-describedby', 'error-experiences');
+      input.placeholder = placeholder;
+      if (max) input.maxLength = max;
+      if (type === 'number') {
+        input.min = '0'; input.max = '100'; input.step = 'any'; input.inputMode = 'decimal';
+      }
+      label.htmlFor = input.id;
+      wrap.append(label, input);
+      entry.append(wrap);
+    }
+    const remove = el('button', 'text-btn remove-experience', 'Remover função');
+    remove.type = 'button';
+    remove.addEventListener('click', () => { entry.remove(); addExperience.disabled = false; });
+    entry.append(remove);
+    experienceList.append(entry);
+    addExperience.disabled = indexes.size + 1 >= 8;
+    entry.querySelector('input').focus();
+  });
 
   function showJobs() {
     const result = filterJobs(jobs, country.value, area.value);
@@ -231,6 +281,7 @@ function startPortal() {
     for (const field of form.querySelectorAll('[aria-invalid]')) field.removeAttribute('aria-invalid');
     for (const target of form.querySelectorAll('.field-error')) target.textContent = '';
     $('form-error').textContent = '';
+    $('error-experiences').textContent = '';
   }
 
   function showErrors(errors) {
@@ -243,6 +294,10 @@ function startPortal() {
       field.setAttribute('aria-invalid', 'true');
       first ??= field;
     }
+    if (errors.experiences) {
+      $('error-experiences').textContent = errors.experiences;
+      first ??= experienceList.querySelector('input');
+    }
     $('form-error').textContent = 'Revise os campos indicados antes de enviar.';
     (first || $('form-error')).focus();
   }
@@ -253,11 +308,19 @@ function startPortal() {
       if (field.validity.valueMissing || (field.required && field.type !== 'checkbox' && !field.value.trim())) {
         errors[field.name] = field.name === 'consent' ? 'Confirme o consentimento para continuar.' : 'Preencha este campo.';
       } else if (!field.validity.valid) {
-        errors[field.name] = field.type === 'email' ? 'Informe um e-mail válido.' : 'Informe um valor entre 0 e 100.';
+        if (/^experience_(?:area|years|skills)_[0-7]$/u.test(field.name)) {
+          errors.experiences = 'Confira os anos de experiência em cada função (entre 0 e 100).';
+        } else {
+          errors[field.name] = field.type === 'email' ? 'Informe um e-mail válido.' : 'Informe um valor entre 0 e 100.';
+        }
       }
     }
     if (!/^\+[1-9]\d{6,14}$/u.test(form.elements.phone.value.trim().replace(/[\s().-]/gu, ''))) {
       errors.phone = 'Informe um WhatsApp com DDI, começando com +.';
+    }
+    const roles = applicationPayload(new FormData(form), activeJob.id, '').experiences;
+    if (roles.some(role => !role.area || role.years === '')) {
+      errors.experiences = 'Informe a função e os anos em cada experiência adicionada.';
     }
     return errors;
   }
@@ -293,6 +356,10 @@ function startPortal() {
       if (version !== routeVersion) return;
       if (response.status === 201) {
         form.reset();
+        for (const extra of [...experienceList.querySelectorAll('[data-experience-index]')]) {
+          if (extra.dataset.experienceIndex !== '0') extra.remove();
+        }
+        addExperience.disabled = false;
         removeVerification();
         $('apply-view').hidden = true;
         $('receipt').hidden = false;
@@ -333,7 +400,11 @@ function startPortal() {
     summary.append(el('span', 'job-area', job.area), el('h1', '', job.title), metadata(job),
       link('Quero me candidatar', '#vaga/' + job.id + '/candidatura', 'button gold'));
     const body = el('div', 'job-body');
-    for (const [heading, content] of [['Sobre a vaga', job.description], ['Requisitos', job.requirements], ['Habilidades', job.skills], ['Idiomas', job.languages]]) {
+    for (const [heading, content] of [
+      ['Sobre a vaga', job.description], ['Requisitos', job.requirements],
+      ['Tarefas obrigatórias', job.required_skills], ['Tarefas desejáveis', job.skills],
+      ['Idiomas', job.languages], ['Qualificações', job.qualifications],
+    ]) {
       if (!content?.length) continue;
       const section = el('section');
       section.append(el('h2', '', heading));

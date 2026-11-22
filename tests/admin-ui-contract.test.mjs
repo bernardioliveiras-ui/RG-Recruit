@@ -69,6 +69,20 @@ test('ranking renders literal candidate text, score and reasons, and distinguish
   }
 });
 
+test('ranking exposes priority, missing data and mandatory tasks for human review', async t => {
+  const {matchCard} = await import('../public/admin.js');
+  globalThis.document = {createElement: tag => new Element(tag)};
+  t.after(() => { delete globalThis.document; });
+  const card = matchCard({candidate:{id:5,name:'Maria',country:'Portugal'},score:70,
+    reasons:[],breakdown:{skills:{earned:17.5,weight:35}},applied:false,
+    band:'review',missing_information:true,
+    review_flags:['Confirmar tarefa obrigatória: Culatra.']});
+  const contents = flatten(card).map(node => node.textContent).filter(Boolean);
+  assert.ok(contents.includes('Revisão humana'));
+  assert.ok(contents.includes('Dados a confirmar'));
+  assert.ok(contents.includes('Confirmar tarefa obrigatória: Culatra.'));
+});
+
 test('destructive action needs exact confirmation and WhatsApp destinations accept only normalized phone numbers', async () => {
   const { deletionConfirmed, whatsappUrl } = await import('../public/admin.js');
   for (const value of ['', 'EXCLUI', 'excluir', 'EXCLUIR 1']) assert.equal(deletionConfirmed(value), false);
@@ -125,7 +139,8 @@ test('admin can create/edit a vacancy, inspect matches, update screening and del
     const body = options.body && JSON.parse(options.body);
     calls.push([options.method, path, body]);
     if (path === 'me') return Response.json({admin:{id:1,email:'admin@example.test'}});
-    if (path === 'jobs' && options.method === 'POST') job = {...body, id: 7, skills:[], languages:[]};
+    if (path === 'jobs' && options.method === 'POST') job = {...body, id: 7, skills:[],
+      required_skills:['Culatra'], languages:[], qualifications:[]};
     if (path === 'jobs/7') Object.assign(job, body);
     if (path === 'jobs' || path === 'jobs/7') return Response.json(options.method === 'GET' ? {jobs:[job]} : {job});
     if (path === 'jobs/7/matches') return Response.json({job,matches:[{candidate,applied:false,score:40,reasons:[],breakdown:{}}]});
@@ -139,9 +154,12 @@ test('admin can create/edit a vacancy, inspect matches, update screening and del
   const { root, location, formWith, submit, navigate, settle } = await mountAdmin('#admin/vagas/nova', api);
   let form = formWith('Criar vaga');
   assert.ok(form);
+  assert.ok(form.elements.required_skills);
+  assert.ok(form.elements.qualifications);
   for (const [key, value] of Object.entries({title:'Nova vaga',area:'Logística',country:'Portugal',description:'Oportunidade',status:'published'})) {
     form.elements[key].value = value;
   }
+  form.elements.required_skills.value = 'Culatra';
   await submit(form); await settle();
   assert.equal(job.status, 'published');
   assert.equal(location.hash, '#admin/vagas');
@@ -172,11 +190,32 @@ test('admin can create/edit a vacancy, inspect matches, update screening and del
 test('candidate name stays in the authenticated profile and out of the document title', async () => {
   const name = 'Full Candidate Name';
   const api = async url => url.endsWith('/me') ? Response.json({admin:{id:1,email:'admin@example.test'}})
-    : Response.json({candidate:{id:3, name, phone:'+351912345678'},applications:[]});
+    : Response.json({candidate:{id:3, name, phone:'+351912345678',
+      experiences:[{area:'Desossa',years:4,skills:['Culatra']}],qualifications:['HACCP']},applications:[]});
   const { root, document } = await mountAdmin('#admin/candidatos/3', api);
   assert.equal(root.querySelector('h1').textContent, name);
   assert.match(document.title, /Perfil de candidato/u);
   assert.ok(!document.title.includes(name));
+  const content = flatten(root).map(n => n.textContent);
+  assert.ok(content.includes('Funções detalhadas'));
+  assert.ok(content.includes('Desossa'));
+  assert.ok(content.includes('Culatra'));
+});
+
+test('job ranking separates high, review and other profiles without dropping any', async () => {
+  const job = {id:7,title:'Desossador',area:'Desossa',country:'Portugal'};
+  const matches = [90,70,42].map((score,i) => ({
+    candidate:{id:i+1,name:'Pessoa '+(i+1),country:'Portugal'},score,applied:false,
+    reasons:[],breakdown:{},band:['high','review','other'][i],
+  }));
+  const api = async url => url.endsWith('/me') ? Response.json({admin:{id:1,email:'admin@example.test'}})
+    : Response.json({job,matches});
+  const {root} = await mountAdmin('#admin/vagas/7/compatibilidade',api);
+  const content = flatten(root).map(n => n.textContent);
+  assert.ok(content.includes('Mais compatíveis (1)'));
+  assert.ok(content.includes('Revisar (1)'));
+  assert.ok(content.includes('Outros perfis (1)'));
+  for (const name of ['Pessoa 1','Pessoa 2','Pessoa 3']) assert.ok(content.includes(name));
 });
 
 test('dashboard reads only aggregates and candidate filters keep typed contact details out of URLs', async () => {

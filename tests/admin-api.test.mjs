@@ -5,7 +5,9 @@ import test from 'node:test';
 import { handleApi } from '../src/api.js';
 
 const origin = 'https://recruit.example';
-const schema = readFileSync(new URL('../migrations/0001_initial.sql', import.meta.url), 'utf8');
+const schema = [
+  '../migrations/0001_initial.sql', '../migrations/0002_match_requirements.sql',
+].map(path => readFileSync(new URL(path, import.meta.url), 'utf8')).join('\n');
 const credentials = { email: 'ADMIN@example.org', password: 'a sufficiently long passphrase' };
 const vacancy = { title: 'Operador', area: 'Desossa', country: 'Portugal', description: 'Uma vaga.' };
 
@@ -135,6 +137,34 @@ test('job publication, candidate filters, all-pool ranking, application review a
   assert.equal((await api('/candidates/2', 'DELETE')).status, 200);
   assert.equal((await api('/candidates/2')).status, 404);
   assert.deepEqual((await (await api('/applications?job_id=1')).json()).applications, []);
+});
+
+test('staff can rank mandatory tasks and role-specific years without hiding other profiles', async t => {
+  const {request,authenticate,sql} = setup(t);
+  const auth = await authenticate();
+  const post = async (path,method,body) => request(path,method,body,auth);
+  const response = await post('/jobs','POST',{...vacancy,status:'published',
+    required_skills:['Culatra'],skills:['Serra do peito'],min_years_experience:4,
+    qualifications:['HACCP'],languages:['Português']});
+  assert.equal(response.status, 201);
+  const created = (await response.json()).job;
+  assert.deepEqual(created.required_skills,['Culatra']);
+  assert.deepEqual(created.qualifications,['HACCP']);
+  sql.prepare(`INSERT INTO candidates (name,phone,country,areas,years_experience,skills,languages,experiences,qualifications)
+    VALUES ('Ana','+351911111111','Portugal','["Desossa"]',10,'["Culatra"]','["Português"]',?, '["HACCP"]')`)
+    .run(JSON.stringify([{area:'Desossa',years:2,skills:['Culatra']}])) ;
+  sql.prepare(`INSERT INTO candidates (name,phone,country,areas,years_experience,skills)
+    VALUES ('Bia','+351922222222','Portugal','["Abate","Desossa"]',15,'["Culatra"]')`).run();
+  const result = await post('/jobs/1/matches','GET');
+  assert.equal(result.status,200);
+  const {matches} = await result.json();
+  assert.equal(matches.length,2);
+  assert.equal(matches[0].candidate.name,'Ana');
+  assert.equal(matches[0].breakdown.experience.earned,10);
+  assert.equal(matches[1].candidate.name,'Bia');
+  assert.equal(matches[1].breakdown.experience.earned,0);
+  assert.equal(matches[1].missing_information,true);
+  assert.equal(matches[1].applied,false);
 });
 
 test('candidate summaries and dashboard omit private fields, and staff search uses the JSON body', async t => {

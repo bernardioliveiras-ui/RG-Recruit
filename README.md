@@ -2,6 +2,8 @@
 
 Portal de vagas em português e painel de recrutamento internacional. O mesmo Cloudflare Worker serve o conteúdo de `public/` e a API em `/api/`. O banco D1 guarda vagas, candidatos, inscrições e contas da equipe. O projeto começa sem registros de demonstração.
 
+**Atualização v1.3:** compatibilidade por tarefas obrigatórias/desejáveis e anos na função, histórico de trabalho de candidatos e ranking com revisão humana. Se já publicou a v1.1/v1.2, leia primeiro [DEPLOY-V1.3.md](docs/DEPLOY-V1.3.md) e execute a migração `0002` no mesmo D1 antes de publicar o novo código. Não substitua seu `wrangler.jsonc` configurado.
+
 **Antes de divulgar o link ou receber dados reais**, complete o aviso de privacidade, valide o canal de atendimento e obtenha revisão jurídica para os países envolvidos. Com a configuração inicial, as vagas podem ser consultadas, mas o formulário e a gravação de candidaturas ficam bloqueados em produção.
 
 ## Rodar localmente

@@ -60,3 +60,42 @@ test('requires a vacancy country and accepts optional city and criteria', () => 
   assert.ok(validateJob({ ...job, status: 'unknown' }).errors.status);
   assert.equal(validateJob([]).ok, false);
 });
+
+test('validates mandatory and desirable tasks separately for each vacancy', () => {
+  const result = validateJob({...job, required_skills:'Culatra, Retirada da cabeça',
+    skills:'Serra do peito', qualifications:['HACCP']});
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.value.required_skills, ['Culatra', 'Retirada da cabeça']);
+  assert.deepEqual(result.value.skills, ['Serra do peito']);
+  assert.deepEqual(result.value.qualifications, ['HACCP']);
+  assert.ok(validateJob({...job, required_skills:[123]}).errors.required_skills);
+});
+
+test('supports bounded experience by role for candidate profiles', () => {
+  const result = validateApplicant({...applicant, qualifications:'HACCP', experiences:[
+    {area:' Desossa ',years:'4,5',skills:'Culatra, Serra do peito'},
+    {area:'Abate',years:2,skills:['Sangria']},
+  ]});
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.value.experiences, [
+    {area:'Desossa',years:4.5,skills:['Culatra','Serra do peito']},
+    {area:'Abate',years:2,skills:['Sangria']},
+  ]);
+  assert.deepEqual(result.value.qualifications, ['HACCP']);
+});
+
+test('rejects oversized or malformed experience and suspicious values', () => {
+  const payloads = [
+    [{area:'Desossa',years:-1,skills:[]}],
+    [{area:'',years:2,skills:[]}],
+    [{area:'Desossa',years:2,skills:[2]}],
+    new Array(9).fill({area:'Abate',years:1,skills:[]}),
+    {area:'Abate',years:1,skills:[]},
+  ];
+  for (const experiences of payloads) {
+    const result = validateApplicant({...applicant, experiences});
+    assert.equal(result.ok, false);
+    assert.ok(result.errors.experiences);
+  }
+  assert.deepEqual(validateApplicant(applicant).value.experiences, []);
+});

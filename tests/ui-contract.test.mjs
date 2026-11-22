@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const asset = name => readFile(new URL('../public/' + name, import.meta.url), 'utf8');
-const fields = ['name', 'phone', 'email', 'country', 'city', 'areas', 'years_experience', 'skills', 'languages', 'willing_to_relocate', 'notes', 'consent'];
+const fields = ['name', 'phone', 'email', 'country', 'city', 'areas', 'years_experience', 'skills', 'languages', 'qualifications', 'willing_to_relocate', 'notes', 'consent'];
 
 test('public shell provides real navigation, labeled filters, branded artwork and accessible states', async () => {
   const html = await asset('index.html');
@@ -61,6 +61,24 @@ test('filters intersect and payload keeps opt-ins explicit without returning sto
   assert.equal(payload.years_experience, '0');
 });
 
+test('application payload converts repeatable experience fields into role-specific records', async () => {
+  const {applicationPayload} = await import('../public/app.js');
+  const form = new FormData();
+  form.set('experience_area_0','Desossa');
+  form.set('experience_years_0','4');
+  form.set('experience_skills_0','Culatra, serra do peito');
+  form.set('experience_area_1','Abate');
+  form.set('experience_years_1','2');
+  form.set('experience_skills_1','Sangria');
+  const payload = applicationPayload(form,3,'token');
+  assert.deepEqual(payload.experiences,[
+    {area:'Desossa',years:'4',skills:'Culatra, serra do peito'},
+    {area:'Abate',years:'2',skills:'Sangria'},
+  ]);
+  assert.equal(payload.experience_area_0,undefined);
+  assert.equal(payload.experience_skills_1,undefined);
+});
+
 test('editable field outlines meet 3:1 contrast on the white applicant form', async () => {
   const css = await asset('app.css');
   const rule = css.match(/\.field textarea\s*\{([^}]+)\}/u)[1];
@@ -79,7 +97,8 @@ test('announces detail loading and focuses the final heading for success, missin
   const code = (await asset('app.js')).replace(/^export /gmu, '');
   const html = await asset('index.html');
   for (const [response, title] of [
-    [Response.json({ job: { id: 1, title: 'Título de teste', country: 'Brasil', area: 'Teste' } }), 'Título de teste'],
+    [Response.json({ job: { id: 1, title: 'Título de teste', country: 'Brasil', area: 'Teste',
+      required_skills:['Culatra'],skills:['Serra do peito'] } }), 'Título de teste'],
     [new Response('', { status: 404 }), 'Vaga indisponível'],
     [null, 'Não foi possível carregar a vaga'],
   ]) {
@@ -125,5 +144,12 @@ test('announces detail loading and focuses the final heading for success, missin
     assert.equal(focused.textContent, title);
     assert.equal(focused.tabIndex, -1);
     assert.equal(document.getElementById('job-detail').attributes['aria-busy'], undefined);
+    if (title === 'Título de teste') {
+      const visit = node => [node.textContent, ...(node.children || []).flatMap(child =>
+        typeof child === 'string' ? [child] : visit(child))];
+      const contents = visit(document.getElementById('job-detail'));
+      assert.ok(contents.includes('Tarefas obrigatórias'));
+      assert.ok(contents.includes('Culatra'));
+    }
   }
 });

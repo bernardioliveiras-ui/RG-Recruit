@@ -5,7 +5,9 @@ import test from 'node:test';
 import { handleApi } from '../src/api.js';
 import worker, { onRequest } from '../src/index.js';
 
-const schema = readFileSync(new URL('../migrations/0001_initial.sql', import.meta.url), 'utf8');
+const schema = [
+  '../migrations/0001_initial.sql', '../migrations/0002_match_requirements.sql',
+].map(path => readFileSync(new URL(path, import.meta.url), 'utf8')).join('\n');
 const applicant = {
   job_id: 1, name: 'Nome original', phone: '+55 (11) 91234-5678',
   country: 'Brasil', years_experience: 3, consent: true,
@@ -103,6 +105,18 @@ test('applies by normalized phone across jobs without replacing any original dat
   }
   assert.deepEqual(sql.prepare('SELECT * FROM candidates').all(), [stored]);
   assert.deepEqual(sql.prepare('SELECT job_id FROM applications ORDER BY job_id').all().map(row => row.job_id), [1, 2]);
+});
+
+test('stores candidate task history by function without exposing it in the public receipt', async t => {
+  const {post,sql} = setup(t);
+  const profile = {...applicant,experiences:[{area:'Desossa',years:4,skills:['Culatra','Serra do peito']}],
+    qualifications:['HACCP']};
+  const response = await post(profile);
+  assert.equal(response.status,201);
+  assert.deepEqual(await response.json(),{message:'Candidatura recebida.'});
+  const stored = sql.prepare('SELECT experiences, qualifications FROM candidates').get();
+  assert.deepEqual(JSON.parse(stored.experiences),profile.experiences);
+  assert.deepEqual(JSON.parse(stored.qualifications),profile.qualifications);
 });
 
 test('returns the generic receipt for the honeypot without writing applicant data', async t => {

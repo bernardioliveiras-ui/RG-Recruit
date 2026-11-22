@@ -38,36 +38,75 @@ function terms(value) {
 export function scoreCandidate(job, candidate) {
   const breakdown = {};
   const reasons = [];
+  const review_flags = [];
+  let missing_information = false;
 
   function add(key, weight, fraction, reason) {
     breakdown[key] = { earned: weight * fraction, weight };
     reasons.push(reason);
   }
 
-  function addOverlap(key, weight, label) {
-    const required = terms(job[key]);
-    if (required.size === 0) return;
-
-    const available = terms(candidate[key]);
-    const matched = [...required].filter(term => available.has(term)).length;
-    add(key, weight, matched / required.size, `${label}: ${matched} de ${required.size}.`);
-  }
-
   const area = normalize(job.area);
+  const experiences = Array.isArray(candidate.experiences) ? candidate.experiences : [];
+  const relevantExperiences = experiences.filter(entry => entry && normalize(entry.area) === area);
+  const applicantAreas = terms(candidate.areas);
+  for (const item of experiences) {
+    if (item?.area) applicantAreas.add(normalize(item.area));
+  }
   if (area) {
-    const matched = terms(candidate.areas).has(area);
-    add('area', 30, Number(matched), matched ? 'Experiência na área da vaga.' : 'Experiência na área não indicada.');
+    const matched = applicantAreas.has(area);
+    add('area', 25, Number(matched), matched ? 'Experiência na área da vaga.' : 'Experiência na área não indicada.');
+    if (!applicantAreas.size) missing_information = true;
   }
 
-  addOverlap('skills', 30, 'Habilidades atendidas');
+  const mandatory = terms(job.required_skills);
+  const desirable = terms(job.skills);
+  const allSkills = new Set([...mandatory, ...desirable]);
+  const availableSkills = experiences.length && area
+    ? terms(relevantExperiences.flatMap(entry => entry.skills || []))
+    : terms(candidate.skills);
+  // Requisitos obrigatórios valem duas partes para uma parte desejável.
+  const skillWeight = [...allSkills].reduce((sum, skill) => sum + (mandatory.has(skill) ? 2 : 1), 0);
+  if (skillWeight) {
+    const earnedSkills = [...allSkills].reduce((sum, skill) =>
+      sum + (availableSkills.has(skill) ? (mandatory.has(skill) ? 2 : 1) : 0), 0);
+    add('skills', 35, earnedSkills / skillWeight,
+      `Tarefas práticas comprovadas no cadastro: ${[...allSkills].filter(skill => availableSkills.has(skill)).length} de ${allSkills.size}.`);
+    if (!availableSkills.size) missing_information = true;
+  }
+  for (const skill of Array.isArray(job.required_skills) ? job.required_skills : []) {
+    if (!availableSkills.has(normalize(skill))) {
+      review_flags.push(`Confirmar tarefa obrigatória: ${skill}.`);
+      missing_information = true;
+    }
+  }
 
   const minimum = job.min_years_experience;
   if (Number.isFinite(minimum) && minimum > 0) {
-    const years = Number.isFinite(candidate.years_experience) ? Math.max(0, candidate.years_experience) : 0;
-    add('experience', 20, Math.min(years / minimum, 1), `Experiência: ${years} ano(s), mínimo de ${minimum}.`);
+    const legacyAreas = [...applicantAreas];
+    const legacyRelevant = !experiences.length && (area ? legacyAreas.length === 1 && legacyAreas[0] === area : true);
+    const yearsKnown = relevantExperiences.length > 0 || legacyRelevant && Number.isFinite(candidate.years_experience);
+    const years = relevantExperiences.length
+      ? Math.max(...relevantExperiences.map(entry => Number.isFinite(entry.years) ? entry.years : 0))
+      : legacyRelevant && Number.isFinite(candidate.years_experience) ? candidate.years_experience : 0;
+    add('experience', 20, Math.min(Math.max(0, years) / minimum, 1),
+      yearsKnown ? `Experiência na função: ${years} ano(s), mínimo de ${minimum}.` : `Tempo na função ainda não informado (mínimo desejado: ${minimum}).`);
+    if (!yearsKnown) missing_information = true;
   }
 
-  addOverlap('languages', 10, 'Idiomas atendidos');
+  const neededLanguages = terms(job.languages);
+  const neededQualifications = terms(job.qualifications);
+  const needed = neededLanguages.size + neededQualifications.size;
+  if (needed) {
+    const knownLanguages = terms(candidate.languages);
+    const knownQualifications = terms(candidate.qualifications);
+    const matched = [...neededLanguages].filter(item => knownLanguages.has(item)).length +
+      [...neededQualifications].filter(item => knownQualifications.has(item)).length;
+    add('languages', 10, matched / needed, `Idiomas e qualificações: ${matched} de ${needed}.`);
+    if (!knownLanguages.size && neededLanguages.size || !knownQualifications.size && neededQualifications.size) {
+      missing_information = true;
+    }
+  }
 
   const country = countryIdentifier(job.country);
   if (country) {
@@ -88,5 +127,9 @@ export function scoreCandidate(job, candidate) {
   }
 
   if (!totalWeight) reasons.push('A vaga não tem critérios de compatibilidade definidos.');
-  return { score: totalWeight ? Math.round(100 * earned / totalWeight) : 0, reasons, breakdown };
+  const score = totalWeight ? Math.round(100 * earned / totalWeight) : 0;
+  return {
+    score, reasons, breakdown, review_flags, missing_information,
+    band: score >= 80 ? 'high' : score >= 55 ? 'review' : 'other',
+  };
 }

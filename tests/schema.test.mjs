@@ -32,3 +32,17 @@ test('direct writes require numeric experience from zero through one hundred in 
     }
   }
 });
+
+test('incremental match migration preserves existing jobs and candidates', t => {
+  const db = new DatabaseSync(':memory:');
+  t.after(() => db.close());
+  db.exec(readFileSync(new URL('../migrations/0001_initial.sql', import.meta.url), 'utf8'));
+  db.exec("INSERT INTO jobs(title,area,country,description) VALUES('Desossador','Desossa','Portugal','Teste')");
+  db.exec("INSERT INTO candidates(name,phone,country) VALUES('Ana','+351911111111','Portugal')");
+  db.exec(readFileSync(new URL('../migrations/0002_match_requirements.sql', import.meta.url), 'utf8'));
+  assert.deepEqual({...db.prepare('SELECT required_skills, qualifications FROM jobs').get()},
+    {required_skills:'[]', qualifications:'[]'});
+  assert.deepEqual({...db.prepare('SELECT experiences, qualifications FROM candidates').get()},
+    {experiences:'[]', qualifications:'[]'});
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM candidates').get().n, 1);
+});
