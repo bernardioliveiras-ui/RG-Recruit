@@ -18,7 +18,7 @@
       "binding": "DB",
       "database_name": "rg-recruit",
       // Replace with the production D1 database UUID before deployment.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "18360bce-a5c1-4e33-89b2-bfe9f2906876",
       "migrations_dir": "migrations"
     }
   ],
